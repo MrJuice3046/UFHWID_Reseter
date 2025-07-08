@@ -3,29 +3,54 @@ from discord.ext import commands, tasks
 import time
 import datetime
 import os
+import json
 from dotenv import load_dotenv
-from keep_alive import keep_alive  # ⬅️ Import keep_alive
+from keep_alive import keep_alive  # Flask server
 
 load_dotenv()
 
 start_time = time.time()
 
-def get_uptime():
-    return str(datetime.timedelta(seconds=int(time.time() - start_time)))
-
-# --- Discord Bot Setup ---
-intents = discord.Intents.default()
-intents.message_content = True
-
-bot = commands.Bot(command_prefix='/', intents=intents)
-
+RESET_FILE = "reset_data.json"
 reset_data = {}
+
 MAX_RESETS_PER_DAY = 6
 COOLDOWN_HOURS = 2
 
+# Load saved resets
+def load_reset_data():
+    global reset_data
+    if os.path.exists(RESET_FILE):
+        with open(RESET_FILE, "r") as f:
+            reset_data.update(json.load(f))
+            print("[LOG] Reset data loaded.")
+
+# Save resets to file
+def save_reset_data():
+    with open(RESET_FILE, "w") as f:
+        json.dump(reset_data, f)
+
+def get_uptime():
+    return str(datetime.timedelta(seconds=int(time.time() - start_time)))
+
+# --- Discord Setup ---
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='/', intents=intents)
+
+recent_resets = []
+
+def log_reset(user_id):
+    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    recent_resets.append(f"{timestamp} - User ID: {user_id}")
+    if len(recent_resets) > 10:
+        recent_resets.pop(0)
+
 def reset_daily_counts():
-    reset_data.clear()
-    print("[LOG] Reset daily reset counts.")
+    for user in reset_data:
+        reset_data[user]["count"] = 0
+    save_reset_data()
+    print("[LOG] Daily reset counts cleared.")
 
 @tasks.loop(hours=24)
 async def daily_reset_task():
@@ -46,43 +71,37 @@ async def on_ready():
     log_uptime.start()
     daily_reset_task.start()
 
-# --- Slash Command: /ping ---
 @bot.tree.command(name="ping", description="Check if the bot is alive")
 async def slash_ping(interaction: discord.Interaction):
-    await interaction.response.send_message("🏓 Pong! The bot is alive.")
+    await interaction.response.send_message("🏓 Pong! Bot is alive.")
 
-# --- HWID Reset Logic ---
-async def try_reset(ctx_or_message):
-    user_id = None
-    send_func = None
-
-    if isinstance(ctx_or_message, commands.Context):
-        user_id = ctx_or_message.author.id
-        send_func = ctx_or_message.send
-    else:
-        user_id = ctx_or_message.author.id
-        send_func = ctx_or_message.channel.send
+async def try_reset(ctx_or_msg):
+    user_id = str(ctx_or_msg.author.id)
+    send = ctx_or_msg.send if isinstance(ctx_or_msg, commands.Context) else ctx_or_msg.channel.send
 
     now = datetime.datetime.utcnow()
     user_data = reset_data.get(user_id, {"count": 0, "last_reset": None})
 
     if user_data["last_reset"]:
-        elapsed = now - user_data["last_reset"]
+        last_reset_time = datetime.datetime.fromisoformat(user_data["last_reset"])
+        elapsed = now - last_reset_time
         if elapsed < datetime.timedelta(hours=COOLDOWN_HOURS):
             remaining = datetime.timedelta(hours=COOLDOWN_HOURS) - elapsed
-            minutes = int(remaining.total_seconds() // 60)
-            await send_func(f"⏳ Please wait {minutes} more minute(s) before resetting again.")
+            mins = int(remaining.total_seconds() // 60)
+            await send(f"⏳ Please wait {mins} more minute(s) before resetting again.")
             return False
 
     if user_data["count"] >= MAX_RESETS_PER_DAY:
-        await send_func(f"🚫 You have reached the maximum of {MAX_RESETS_PER_DAY} HWID resets today. Try again tomorrow.")
+        await send(f"🚫 You have reached {MAX_RESETS_PER_DAY} HWID resets today.")
         return False
 
     user_data["count"] += 1
-    user_data["last_reset"] = now
+    user_data["last_reset"] = now.isoformat()
     reset_data[user_id] = user_data
+    save_reset_data()
+    log_reset(user_id)
 
-    await send_func(f"✅ HWID reset done! You have used {user_data['count']}/{MAX_RESETS_PER_DAY} resets today.")
+    await send(f"✅ Done, Enjoy Universal Farm! You have {user_data['count']}/{MAX_RESETS_PER_DAY} resets left.")
     return True
 
 @bot.command()
@@ -100,7 +119,6 @@ async def on_message(message):
             try:
                 await message.reply(f"/force-resethwid user:{message.author.id}")
                 await message.add_reaction("✅")
-                await message.channel.send("✅ Done, Enjoy Universal Farm!")
             except:
                 pass
     await bot.process_commands(message)
@@ -109,12 +127,13 @@ async def on_message(message):
 async def uptime(ctx):
     await ctx.send(f"🕒 Bot has been alive for: `{get_uptime()}`")
 
-# --- Start Flask Server to Keep Alive ---
-keep_alive()  # 🟢 This starts the Flask server for Render
+# --- Start Flask Server ---
+keep_alive(get_uptime, recent_resets)  # <- Pass values
 
 # --- Run Bot ---
-token = os.getenv('DISCORD_BOT_TOKEN')
+token = os.getenv("DISCORD_BOT_TOKEN")
 if not token:
-    print("❌ DISCORD_BOT_TOKEN is not set")
+    print("❌ DISCORD_BOT_TOKEN not set")
 else:
+    load_reset_data()
     bot.run(token)
