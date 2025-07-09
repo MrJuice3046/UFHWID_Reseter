@@ -17,10 +17,10 @@ def keep_alive(get_uptime, recent_resets):
             </style>
         </head>
         <body>
-            <h1>🤖 Universal Farm HWID Bot</h1>
-            <p>✅ Bot is alive!</p>
-            <p>🕒 Uptime: <b>{get_uptime()}</b></p>
-            <h2>📜 Latest Resets</h2>
+            <h1> Universal Farm HWID Bot</h1>
+            <p> Bot is alive!</p>
+            <p> Uptime: <b>{get_uptime()}</b></p>
+            <h2> Latest Resets</h2>
             <pre>{chr(10).join(recent_resets) or "No resets yet."}</pre>
         </body>
         </html>
