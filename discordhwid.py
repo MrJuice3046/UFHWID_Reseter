@@ -12,7 +12,10 @@ load_dotenv()
 start_time = time.time()
 
 RESET_FILE = "reset_data.json"
+RECENT_RESETS_FILE = "recent_resets.json"
+
 reset_data = {}
+recent_resets = []
 
 MAX_RESETS_PER_DAY = 6
 COOLDOWN_HOURS = 2
@@ -30,6 +33,23 @@ def save_reset_data():
     with open(RESET_FILE, "w") as f:
         json.dump(reset_data, f)
 
+# Load recent HWID reset logs
+def load_recent_resets():
+    global recent_resets
+    if os.path.exists(RECENT_RESETS_FILE):
+        try:
+            with open(RECENT_RESETS_FILE, "r") as f:
+                recent_resets[:] = json.load(f)
+                print("[LOG] Recent resets loaded.")
+        except Exception as e:
+            print(f"[ERR] Failed to load recent resets: {e}")
+            recent_resets[:] = []
+
+# Save recent HWID reset logs
+def save_recent_resets():
+    with open(RECENT_RESETS_FILE, "w") as f:
+        json.dump(recent_resets[-30:], f)
+
 def get_uptime():
     return str(datetime.timedelta(seconds=int(time.time() - start_time)))
 
@@ -38,13 +58,12 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
 
-recent_resets = []
-
 def log_reset(user_id):
     timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     recent_resets.append(f"{timestamp} - User ID: {user_id}")
-    if len(recent_resets) > 10:
+    if len(recent_resets) > 100:
         recent_resets.pop(0)
+    save_recent_resets()
 
 def reset_daily_counts():
     for user in reset_data:
@@ -132,13 +151,16 @@ async def on_message(message):
 async def uptime(ctx):
     await ctx.send(f"🕒 Bot has been alive for: `{get_uptime()}`")
 
+# --- Load Data ---
+load_reset_data()
+load_recent_resets()
+
 # --- Start Flask Server ---
-keep_alive(get_uptime, recent_resets)  # <- Pass values
+keep_alive(get_uptime, lambda: recent_resets[-30:])
 
 # --- Run Bot ---
 token = os.getenv("DISCORD_BOT_TOKEN")
 if not token:
     print("❌ DISCORD_BOT_TOKEN not set")
 else:
-    load_reset_data()
     bot.run(token)
