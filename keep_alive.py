@@ -1,34 +1,64 @@
-from flask import Flask, render_template_string
+# keep_alive.py
+from flask import Flask, render_template_string, jsonify
 from threading import Thread
 
-def keep_alive(get_uptime, recent_resets):
-    app = Flask('')
+app = Flask(__name__)
 
-    @app.route('/')
-    def home():
-        html = f"""
+get_uptime_callback = None
+get_recent_resets_callback = None
+
+@app.route('/')
+def home():
+    return render_template_string("""
         <html>
         <head>
-            <title>Bot Uptime: {get_uptime()}</title>
+            <title>Bot Uptime - <span id="uptime">Loading...</span></title>
             <style>
-                body {{ font-family: sans-serif; background: #1e1e1e; color: white; padding: 20px; }}
-                h1 {{ color: #00ff99; }}
-                pre {{ background: #2e2e2e; padding: 10px; border-radius: 5px; }}
+                body { font-family: Arial; background: #111; color: #0f0; padding: 20px; }
+                .log { margin-top: 20px; }
             </style>
         </head>
         <body>
-            <h1> Universal Farm HWID Bot</h1>
-            <p> Bot is alive!</p>
-            <p> Uptime: <b>{get_uptime()}</b></p>
-            <h2> Latest Resets</h2>
-            <pre>{chr(10).join(recent_resets) or "No resets yet."}</pre>
+            <h1> Bot is running!</h1>
+            <p> Uptime: <span id="uptime-display">Loading...</span></p>
+            <div class="log">
+                <h3> Recent HWID Resets:</h3>
+                <ul id="log"></ul>
+            </div>
+            <script>
+                async function updateStatus() {
+                    const res = await fetch('/status');
+                    const data = await res.json();
+                    document.getElementById("uptime").textContent = data.uptime;
+                    document.getElementById("uptime-display").textContent = data.uptime;
+                    const log = document.getElementById("log");
+                    log.innerHTML = "";
+                    data.recent_resets.forEach(entry => {
+                        const li = document.createElement("li");
+                        li.textContent = entry;
+                        log.appendChild(li);
+                    });
+                }
+                setInterval(updateStatus, 1000);
+                updateStatus();
+            </script>
         </body>
         </html>
-        """
-        return render_template_string(html)
+    """)
 
-    def run():
-        app.run(host='0.0.0.0', port=8080)
+@app.route('/status')
+def status():
+    return jsonify({
+        "uptime": get_uptime_callback(),
+        "recent_resets": get_recent_resets_callback()
+    })
 
-    t = Thread(target=run)
-    t.start()
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive(uptime_cb, reset_cb):
+    global get_uptime_callback, get_recent_resets_callback
+    get_uptime_callback = uptime_cb
+    get_recent_resets_callback = reset_cb
+    thread = Thread(target=run)
+    thread.start()

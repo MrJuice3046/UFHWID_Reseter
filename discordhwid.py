@@ -77,7 +77,12 @@ async def slash_ping(interaction: discord.Interaction):
 
 async def try_reset(ctx_or_msg):
     user_id = str(ctx_or_msg.author.id)
-    send = ctx_or_msg.send if isinstance(ctx_or_msg, commands.Context) else ctx_or_msg.channel.send
+
+    # Use reply feature if available
+    if hasattr(ctx_or_msg, "reply"):
+        reply = ctx_or_msg.reply
+    else:
+        reply = ctx_or_msg.channel.send  # fallback
 
     now = datetime.datetime.utcnow()
     user_data = reset_data.get(user_id, {"count": 0, "last_reset": None})
@@ -88,11 +93,11 @@ async def try_reset(ctx_or_msg):
         if elapsed < datetime.timedelta(hours=COOLDOWN_HOURS):
             remaining = datetime.timedelta(hours=COOLDOWN_HOURS) - elapsed
             mins = int(remaining.total_seconds() // 60)
-            await send(f"⏳ Please wait {mins} more minute(s) before resetting again.")
+            await reply(f"⏳ Please wait {mins} more minute(s) before resetting again.")
             return False
 
     if user_data["count"] >= MAX_RESETS_PER_DAY:
-        await send(f"🚫 You have reached {MAX_RESETS_PER_DAY} HWID resets today.")
+        await reply(f"🚫 You have reached {MAX_RESETS_PER_DAY} HWID resets today.")
         return False
 
     user_data["count"] += 1
@@ -101,7 +106,7 @@ async def try_reset(ctx_or_msg):
     save_reset_data()
     log_reset(user_id)
 
-    await send(f"✅ Done, Enjoy Universal Farm! You have {user_data['count']}/{MAX_RESETS_PER_DAY} resets left.")
+    await reply(f"✅ Done, Enjoy Universal Farm! You have {user_data['count']}/{MAX_RESETS_PER_DAY} resets left.")
     return True
 
 @bot.command()
@@ -117,10 +122,10 @@ async def on_message(message):
         success = await try_reset(message)
         if success:
             try:
-                await message.reply(f"/force-resethwid user:{message.author.id}")
                 await message.add_reaction("✅")
-            except:
-                pass
+                await message.reply(f"/force-resethwid user:{message.author.id}")
+            except Exception as e:
+                print(f"Reply/React failed: {e}")
     await bot.process_commands(message)
 
 @bot.command()
