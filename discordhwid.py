@@ -5,7 +5,7 @@ import datetime
 import os
 import json
 from dotenv import load_dotenv
-from keep_alive import keep_alive  # Flask server
+from keep_alive import keep_alive
 
 load_dotenv()
 
@@ -17,7 +17,6 @@ reset_data = {}
 MAX_RESETS_PER_DAY = 6
 COOLDOWN_HOURS = 2
 
-# Load saved resets
 def load_reset_data():
     global reset_data
     if os.path.exists(RESET_FILE):
@@ -25,7 +24,6 @@ def load_reset_data():
             reset_data.update(json.load(f))
             print("[LOG] Reset data loaded.")
 
-# Save resets to file
 def save_reset_data():
     with open(RESET_FILE, "w") as f:
         json.dump(reset_data, f)
@@ -33,7 +31,6 @@ def save_reset_data():
 def get_uptime():
     return str(datetime.timedelta(seconds=int(time.time() - start_time)))
 
-# --- Discord Setup ---
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='/', intents=intents)
@@ -112,25 +109,28 @@ async def force_resethwid(ctx):
 async def on_message(message):
     if message.author.bot:
         return
+
     content = message.content.lower()
     if "hwid reset" in content or bot.user in message.mentions:
         success = await try_reset(message)
         if success:
             try:
-                await message.reply(f"/force-resethwid user:{message.author.id}")
+                await message.reply(
+                    f"<@{message.author.id}> HWID reset successful. ✅",
+                    mention_author=True
+                )
                 await message.add_reaction("✅")
-            except:
-                pass
+            except Exception as e:
+                print(f"Reply/Reaction error: {e}")
+
     await bot.process_commands(message)
 
 @bot.command()
 async def uptime(ctx):
     await ctx.send(f"🕒 Bot has been alive for: `{get_uptime()}`")
 
-# --- Start Flask Server ---
-keep_alive(get_uptime, recent_resets)  # <- Pass values
+keep_alive(get_uptime, recent_resets)
 
-# --- Run Bot ---
 token = os.getenv("DISCORD_BOT_TOKEN")
 if not token:
     print("❌ DISCORD_BOT_TOKEN not set")
